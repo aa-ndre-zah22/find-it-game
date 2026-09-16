@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FIND IT — Oat Milk</title>
+  <style>
+    :root{
+      --ui-bg:#faf5ef; /* warm cream */
+      --muted:#7b6b5a;
+      --accent:#c84b31; /* tomato red */
+      --card-shadow: 0 8px 24px rgba(11,10,8,0.08);
+      --focus: 3px solid #ffcd6b;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    html,body{height:100%;margin:0;background:linear-gradient(180deg,#fffaf6 0%, #fff 60%);}    
+    .app{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;box-sizing:border-box}
+
+    /* Start Screen */
+    .start-screen{max-width:900px;width:100%;background:var(--ui-bg);border-radius:14px;padding:36px;box-shadow:var(--card-shadow);text-align:center}
+    h1{font-size:48px;margin:0 0 8px;letter-spacing:0.02em}
+    p.lead{margin:0 0 18px;color:#5d4f44}
+    .start-btn{display:inline-flex;gap:10px;align-items:center;padding:12px 20px;border-radius:999px;background:#2b6d4a;color:white;border:0;font-weight:600;cursor:pointer}
+    .start-btn:focus{outline:none;box-shadow:var(--focus)}
+
+    /* Game UI */
+    .game-wrap{width:100%;height:100vh;position:relative;display:flex;flex-direction:column}
+    .ui-top{position:absolute;left:50%;transform:translateX(-50%);top:18px;background:var(--ui-bg);padding:14px 18px;border-radius:12px;box-shadow:var(--card-shadow);display:flex;gap:18px;align-items:center;z-index:20}
+    .ui-top h2{font-size:16px;margin:0}
+    .stats{font-size:14px;color:var(--muted)}
+    .progress{font-size:12px;color:#8f7b69}
+
+    /* Canvas container */
+    #scene-container{flex:1;position:relative;overflow:hidden}
+    canvas{display:block;width:100%;height:100%}
+
+    /* Small in-game messages */
+    .message{position:absolute;left:50%;transform:translateX(-50%);top:70px;background:rgba(255,255,255,0.9);padding:8px 12px;border-radius:8px;box-shadow:var(--card-shadow);z-index:30;font-weight:600;color:#48392f}
+
+    /* Success modal */
+    .modal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(0.98);background:var(--ui-bg);padding:26px;border-radius:12px;box-shadow:var(--card-shadow);z-index:40;min-width:320px;text-align:center;display:none}
+    .modal.show{display:block;animation:pop .28s ease-out forwards}
+    @keyframes pop{from{transform:translate(-50%,-50%) scale(.96)}to{transform:translate(-50%,-50%) scale(1)}}
+    .modal h3{margin:0 0 8px}
+    .modal p{margin:6px 0;color:var(--muted)}
+    .muted{color:var(--muted)}
+
+    /* Reflection screen */
+    .reflection{position:absolute;right:18px;bottom:18px;background:rgba(255,255,255,0.95);padding:14px;border-radius:12px;box-shadow:var(--card-shadow);z-index:40;width:320px}
+    .controls{display:flex;flex-direction:column;gap:8px}
+    .toggle{display:flex;align-items:center;justify-content:space-between;background:#fff;padding:8px;border-radius:8px}
+    .toggle button{background:#eee;border-radius:999px;border:0;padding:6px 10px;cursor:pointer}
+    .callout{position:absolute;background:rgba(255,255,255,0.95);padding:8px;border-radius:8px;box-shadow:var(--card-shadow);z-index:45;max-width:200px}
+
+    /* Accessibility and footer */
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+    /* Responsive */
+    @media (max-width:800px){h1{font-size:36px}.start-screen{padding:22px}.ui-top{left:12px;transform:none;right:auto}.reflection{width:92%;left:50%;transform:translateX(-50%);right:auto}}
+  </style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="start-screen" id="startScreen" role="region" aria-label="Start screen">
+    <h1>FIND IT</h1>
+    <p class="lead">A tiny game about finding your way through visual clutter.</p>
+    <p><strong>Can you find the Oat Milk?</strong></p>
+    <div style="height:14px"></div>
+    <button class="start-btn" id="startButton">START GAME →</button>
+    <p style="margin-top:18px;color:var(--muted);font-size:13px">Built as a playful accessibility experiment — the supermarket is intentionally busy.</p>
+  </div>
+
+  <div class="game-wrap" id="gameWrap" hidden>
+    <div class="ui-top" role="status" aria-live="polite">
+      <div>
+        <h2>FIND IT 🔎</h2>
+        <div class="progress">MISSION 01 / 01</div>
+      </div>
+      <div class="stats" style="min-width:200px">
+        <div><strong id="missionText">Find the Oat Milk</strong></div>
+        <div>Time: <span id="time">00:00</span> &nbsp; • &nbsp; Attempts: <span id="attempts">0</span></div>
+      </div>
+    </div>
+
+    <div id="scene-container" tabindex="0">
+      <!-- three.js canvas will be injected here -->
+      <div class="message" id="hintMessage" style="display:none">Not this one!</div>
+
+      <div class="modal" id="successModal" role="dialog" aria-modal="true" aria-labelledby="successTitle">
+        <h3 id="successTitle">YOU FOUND IT! 🎉</h3>
+        <p id="resultTime">Time: 00:00</p>
+        <p id="resultAttempts">Attempts: 0</p>
+        <div style="height:12px"></div>
+        <button id="insightBtn" class="start-btn" style="background:#5a4a9b">What made this harder than it needed to be? →</button>
+        <div style="height:12px"></div>
+        <button id="playAgainBtn" class="start-btn" style="background:#2b6d4a">Play again</button>
+      </div>
+
+      <div class="reflection" id="reflectionPanel" hidden>
+        <h4 style="margin:0 0 8px">Why was that harder than it needed to be?</h4>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:10px">Explore common design problems — then make the scene easier to find the product.</div>
+        <div class="controls">
+          <div class="toggle">
+            <div>Reduce clutter</div>
+            <button id="toggleClutter" aria-pressed="false">OFF</button>
+          </div>
+          <div class="toggle">
+            <div>Improve hierarchy</div>
+            <button id="toggleHierarchy" aria-pressed="false">OFF</button>
+          </div>
+          <div class="toggle">
+            <div>Increase contrast</div>
+            <button id="toggleContrast" aria-pressed="false">OFF</button>
+          </div>
+        </div>
+        <div style="height:12px"></div>
+        <div style="font-size:13px;color:var(--muted)">Use keyboard: Tab to focus, Space/Enter to toggle.</div>
+      </div>
+
+      <!-- callouts (positioned dynamically) -->
+      <div id="callouts" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div class="sr-only" id="ariaStatus" aria-live="polite"></div>
+</div>
+
+<script type="module">
+// Using three.js from unpkg for convenience — embedded experience still works offline if three.js is cached.
+import * as THREE from 'https://unpkg.com/three@0.154.0/build/three.module.js';
+
+// Basic app state
+const startBtn = document.getElementById('startButton');
+const startScreen = document.getElementById('startScreen');
+const gameWrap = document.getElementById('gameWrap');
+const sceneContainer = document.getElementById('scene-container');
+const timeEl = document.getElementById('time');
+const attemptsEl = document.getElementById('attempts');
+const hintMessage = document.getElementById('hintMessage');
+const successModal = document.getElementById('successModal');
+const resultTime = document.getElementById('resultTime');
+const resultAttempts = document.getElementById('resultAttempts');
+const insightBtn = document.getElementById('insightBtn');
+const playAgainBtn = document.getElementById('playAgainBtn');
+const reflectionPanel = document.getElementById('reflectionPanel');
+const toggleClutter = document.getElementById('toggleClutter');
+const toggleHierarchy = document.getElementById('toggleHierarchy');
+const toggleContrast = document.getElementById('toggleContrast');
+const callouts = document.getElementById('callouts');
+const ariaStatus = document.getElementById('ariaStatus');
+
+let attempts = 0;
+let startTime = 0;
+let timerInterval = null;
+let found = false;
+
+// THREE setup
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setPixelRatio(window.devicePixelRatio);
+sceneContainer.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45,1,0.1,2000);
+camera.position.set(0,20,60);
+
+// lighting (soft)
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff,0.6);
+dir.position.set(0,50,50);
+scene.add(dir);
+
+// Raycaster
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+// Product containers
+let products = []; // {mesh, id, type}
+let oatProduct = null;
+
+// Visual parameters controlled by toggles
+let reduceClutter = false;
+let improveHierarchy = false;
+let increaseContrast = false;
+
+// Responsiveness
+function onWindowResize(){
+  const w = sceneContainer.clientWidth;
+  const h = sceneContainer.clientHeight;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onWindowResize);
+
+// Utilities to create canvas textures (hand-painted-ish labels)
+function makeLabelTexture(text, opts={bg:'#fff', fg:'#333', accent:'#c84b31', w:256,h:256, style:'carton'}){
+  const c = document.createElement('canvas');
+  c.width = opts.w; c.height = opts.h;
+  const ctx = c.getContext('2d');
+  // subtle paper background
+  ctx.fillStyle = opts.bg;
+  ctx.fillRect(0,0,c.width,c.height);
+  ctx.globalAlpha = 0.95;
+  // painted speckle
+  for(let i=0;i<120;i++){
+    ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.06})`;
+    ctx.fillRect(Math.random()*c.width, Math.random()*c.height, Math.random()*3, Math.random()*3);
+  }
+  // border
+  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(6,6,c.width-12,c.height-12);
+
+  // main art
+  ctx.fillStyle = opts.accent;
+  ctx.fillRect(18,18,c.width-36, Math.floor(c.height*0.35));
+  // product name
+  ctx.fillStyle = opts.fg;
+  ctx.font = 'bold 28px serif';
+  ctx.fillText(text, 24, Math.floor(c.height*0.55));
+
+  // small decorative
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px serif';
+  ctx.fillText('organic', 24, Math.floor(c.height*0.75));
+  return new THREE.CanvasTexture(c);
+}
+
+// Create product mesh: box with label on front
+function createProduct(id, labelText, kind='misc'){
+  // varied sizes
+  const width = kind.includes('box') ? 6 : 4 + Math.random()*3; // cartons bigger
+  const height = 6 + Math.random()*6;
+  const depth = 2 + Math.random()*2;
+  const geometry = new THREE.BoxGeometry(width, height, depth);
+
+  // front texture uses canvas
+  let bg = '#fff';
+  let fg = '#2c2a28';
+  let accent = '#c84b31';
+  if(increaseContrast){ bg = '#fff'; fg='#111'; accent='#2b6d4a' }
+  if(kind==='oat') accent='#e9d5b3';
+  if(improveHierarchy){ fg = '#081827'; }
+
+  const textures = [];
+  for(let s=0;s<6;s++){
+    const t = makeLabelTexture(labelText, {bg,fg,accent,w:256,h:256});
+    t.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    textures.push(new THREE.MeshBasicMaterial({map:t}));
+  }
+  const mesh = new THREE.Mesh(geometry, textures);
+  mesh.userData = {id,labelText,kind,baseScale:1};
+  return mesh;
+}
+
+// Build shelves and populate with many products
+function buildShelves(){
+  // clear existing
+  products.forEach(p=>scene.remove(p.mesh));
+  products = [];
+  oatProduct = null;
+
+  // shelves as simple planes
+  const shelfY = [18,8,-2,-12,-22];
+  const shelfLength = 120; // x range
+  // draw shelf boards
+  shelfY.forEach(y=>{
+    const g = new THREE.BoxGeometry(shelfLength,1.2,8);
+    const m = new THREE.MeshBasicMaterial({color: '#f3e8dd'});
+    const board = new THREE.Mesh(g,m);
+    board.position.set(0,y, -6);
+    scene.add(board);
+  });
+
+  // product types pool
+  const types = ['milk','juice','cereal','biscuit','pasta','sauce','coffee','tea','yogurt','canned','snack','cleaning','fruit','veg','bread','jar','box','bottle'];
+  // number of products depends on reduceClutter toggle
+  const productCount = reduceClutter ? 28 : 38;
+
+  // place products along shelves
+  for(let i=0;i<productCount;i++){
+    const shelfIndex = Math.floor(Math.random()*shelfY.length);
+    const y = shelfY[shelfIndex] + 3 + Math.random()*6 - 1;
+    const x = -50 + Math.random()*100;
+    const z = (Math.random()*6)-3;
+
+    // decide kind
+    let kind = types[Math.floor(Math.random()*types.length)];
+    // some variation create 'carton' style
+    if(Math.random()>0.85) kind = 'box';
+    const lbl = (kind==='fruit'||kind==='veg') ? kind.toUpperCase() : (kind.charAt(0).toUpperCase()+kind.slice(1));
+    const mesh = createProduct('p'+i,lbl, kind);
+    mesh.position.set(x,y,z);
+    mesh.rotation.y = (Math.random()-0.5)*0.2;
+    mesh.userData.origPos = mesh.position.clone();
+    scene.add(mesh);
+    products.push({mesh,id:'p'+i,type:kind});
+  }
+
+  // select random product to be oat milk and replace its texture/label
+  const candidateIdx = Math.floor(Math.random()*products.length);
+  const chosen = products[candidateIdx];
+  const oatMesh = chosen.mesh;
+  oatMesh.userData.kind = 'oat';
+  // change its front texture to say Oat Milk
+  const tex = makeLabelTexture('OAT MILK', {bg:'#f7efe3',fg:'#222',accent:'#9aa7b0',w:256,h:256});
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  // Apply to all faces for simplicity
+  oatMesh.material.forEach(mat=>{ mat.map = tex; mat.needsUpdate = true});
+  oatProduct = chosen;
+
+  // subtle arrangement: ensure oat is visible and clickable but not obvious
+}
+
+// initial build
+buildShelves();
+
+// animation / render loop
+const clock = new THREE.Clock();
+let shakeAnim = null;
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  // simple gentle camera float
+  camera.position.x += (Math.sin(Date.now()*0.0005)*0.02);
+  camera.lookAt(0,0,0);
+
+  // handle shake animation
+  if(shakeAnim){
+    const {mesh,startTime,duration,amp} = shakeAnim;
+    const t = (performance.now()-startTime)/duration;
+    if(t>=1) { mesh.position.copy(mesh.userData.origPos); shakeAnim=null; }
+    else{
+      const s = Math.sin(t*Math.PI*6)*(1-t);
+      mesh.position.x = mesh.userData.origPos.x + s*amp;
+    }
+  }
+
+  renderer.render(scene,camera);
+}
+animate();
+
+// Interaction handling
+function screenToPointer(x,y){
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((x-rect.left)/rect.width)*2-1;
+  pointer.y = -((y-rect.top)/rect.height)*2+1;
+}
+
+function onClick(e){
+  if(found) return;
+  const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+  const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+  screenToPointer(clientX, clientY);
+  raycaster.setFromCamera(pointer, camera);
+  const intersects = raycaster.intersectObjects(products.map(p=>p.mesh));
+  if(intersects.length>0){
+    const mesh = intersects[0].object;
+    handleProductClick(mesh);
+  }
+}
+renderer.domElement.addEventListener('pointerdown', onClick);
+
+function handleProductClick(mesh){
+  // find product record
+  const rec = products.find(p=>p.mesh===mesh);
+  if(!rec) return;
+  attempts++;
+  attemptsEl.textContent = attempts;
+
+  if(rec === oatProduct){
+    // success
+    found=true;
+    stopTimer();
+    // success animation: tasteful outline + scale
+    mesh.scale.set(1.08,1.08,1.08);
+    // highlight by adding a ring behind
+    const ringGeo = new THREE.RingGeometry( (mesh.geometry.parameters.width||5)*0.6, (mesh.geometry.parameters.width||5)*0.9, 32 );
+    const ringMat = new THREE.MeshBasicMaterial({color:0x2b6d4a, side:THREE.DoubleSide});
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI/2;
+    ring.position.set(mesh.position.x, mesh.position.y- (mesh.geometry.parameters.height/2) - 1.4, mesh.position.z);
+    scene.add(ring);
+
+    // show modal
+    const t = formatTimeElapsed();
+    resultTime.textContent = 'Time: ' + t;
+    resultAttempts.textContent = 'Attempts: ' + attempts;
+    successModal.classList.add('show');
+    successModal.style.display = 'block';
+    ariaStatus.textContent = 'You found the Oat Milk in ' + t + ' after ' + attempts + ' attempts.';
+  } else {
+    // wrong: shake product and show small message
+    shake(mesh, 600, 1.6);
+    showHint('Not this one!');
+    ariaStatus.textContent = 'Not the Oat Milk. Attempts: ' + attempts;
+  }
+}
+
+function shake(mesh, duration, amp){
+  shakeAnim = {mesh, startTime:performance.now(), duration, amp};
+}
+
+function showHint(text){
+  hintMessage.textContent = text;
+  hintMessage.style.display = 'block';
+  hintMessage.style.opacity = '1';
+  setTimeout(()=>{ hintMessage.style.opacity = '0'; hintMessage.style.display='none'; },700);
+}
+
+// Timer
+function startTimer(){
+  startTime = performance.now();
+  timerInterval = setInterval(()=>{
+    timeEl.textContent = formatTimeElapsed();
+  },250);
+}
+function stopTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+  timeEl.textContent = formatTimeElapsed();
+}
+function formatTimeElapsed(){
+  const now = found ? (endTime || performance.now()) : performance.now();
+  const elapsed = (found ? (endTime-startTime) : (performance.now()-startTime)) || 0;
+  const s = Math.floor(elapsed/1000);
+  const mm = Math.floor(s/60).toString().padStart(2,'0');
+  const ss = (s%60).toString().padStart(2,'0');
+  return mm+':'+ss;
+}
+let endTime = null;
+
+// Start Game flow
+startBtn.addEventListener('click', ()=>{
+  startScreen.hidden = true;
+  gameWrap.hidden = false;
+  reflectionPanel.hidden = true;
+  // ensure canvas full size
+  onWindowResize();
+  attempts = 0; attemptsEl.textContent = 0; found=false; endTime=null;
+  buildShelves();
+  startTimer();
+  ariaStatus.textContent = 'Game started. Find the Oat Milk.';
+});
+
+// Success modal buttons
+insightBtn.addEventListener('click', ()=>{
+  successModal.classList.remove('show');
+  successModal.style.display='none';
+  showReflection();
+});
+playAgainBtn.addEventListener('click', ()=>{
+  successModal.classList.remove('show');
+  successModal.style.display='none';
+  // restart
+  attempts = 0; attemptsEl.textContent = 0; found=false; endTime=null;
+  buildShelves();
+  startTimer();
+  reflectionPanel.hidden = true;
+});
+
+function showReflection(){
+  reflectionPanel.hidden = false;
+  // show callouts overlaid
+  placeCallouts();
+  ariaStatus.textContent = 'Reflection: why was that harder? Use toggles to make it easier.';
+}
+
+// Map 3D position to 2D screen for callout placement
+function toScreenPosition(pos, camera){
+  const vector = pos.clone().project(camera);
+  const rect = renderer.domElement.getBoundingClientRect();
+  return {
+    x: (vector.x+1)/2 * rect.width + rect.left,
+    y: (-vector.y+1)/2 * rect.height + rect.top
+  };
+}
+
+function clearCallouts(){
+  callouts.innerHTML='';
+}
+
+function placeCallouts(){
+  clearCallouts();
+  // pick some issues: visual clutter (cluster of many items), weak hierarchy (similar labels near oat), similar products
+  // Visual clutter: show near group of products (pick middle shelf)
+  const cluster = products.slice(6,12).map(p=>p.mesh);
+  const sample = cluster[0];
+  const pos = toScreenPosition(sample.position,camera);
+  const el = document.createElement('div');
+  el.className='callout';
+  el.style.left = (pos.x+10)+'px';
+  el.style.top = (pos.y-30)+'px';
+  el.innerHTML = '<strong>Visual clutter</strong><div class="muted">Too many competing elements make scanning harder.</div>';
+  callouts.appendChild(el);
+
+  // weak hierarchy
+  const near = oatProduct.mesh;
+  const pos2 = toScreenPosition(near.position,camera);
+  const el2 = document.createElement('div');
+  el2.className='callout';
+  el2.style.left = (pos2.x+10)+'px';
+  el2.style.top = (pos2.y-30)+'px';
+  el2.innerHTML = '<strong>Weak hierarchy</strong><div class="muted">Everything asks for attention at the same time.</div>';
+  callouts.appendChild(el2);
+
+  // similar products
+  const sim = products.find(p=>p!==oatProduct && p.type==='milk');
+  if(sim){
+    const pos3 = toScreenPosition(sim.mesh.position,camera);
+    const el3 = document.createElement('div');
+    el3.className='callout';
+    el3.style.left = (pos3.x+10)+'px';
+    el3.style.top = (pos3.y-30)+'px';
+    el3.innerHTML = '<strong>Similar products</strong><div class="muted">Similar colours and shapes make it harder to pick the right one.</div>';
+    callouts.appendChild(el3);
+  }
+}
+
+// Toggle controls — actually modify scene
+function applyToggles(){
+  // reduce clutter removes ~30% of non-oat products
+  if(reduceClutter){
+    // remove some products visually: fade scale down
+    let removed = 0;
+    products.forEach((p,idx)=>{
+      if(p !== oatProduct && Math.random()<0.28){
+        p.mesh.visible = false; removed++;
+      } else p.mesh.visible = true;
+    });
+  } else {
+    products.forEach(p=>p.mesh.visible = true);
+  }
+
+  // improve hierarchy: emphasize labels — replace textures with clearer high-contrast label
+  products.forEach(p=>{
+    if(improveHierarchy){
+      const t = makeLabelTexture(p.mesh.userData.labelText||'ITEM', {bg:'#fff',fg:'#071426',accent:'#ffd86b',w:256,h:256});
+      p.mesh.material.forEach(mat=>{ mat.map = t; mat.needsUpdate = true});
+    } else {
+      // rebuild lightly: reuse base
+      const t = makeLabelTexture(p.mesh.userData.labelText||'ITEM', {bg:'#fff',fg:'#2c2a28',accent:'#c84b31',w:256,h:256});
+      p.mesh.material.forEach(mat=>{ mat.map = t; mat.needsUpdate = true});
+    }
+  });
+
+  // increase contrast: tweak materials colors overall
+  products.forEach(p=>{
+    if(increaseContrast){
+      p.mesh.material.forEach(mat=>{ mat.color = new THREE.Color(0xffffff); });
+    } else {
+      p.mesh.material.forEach(mat=>{ mat.color = new THREE.Color(0xffffff); });
+    }
+  });
+
+  // re-draw callouts to reflect layout
+  placeCallouts();
+}
+
+// Toggle button handlers with keyboard accessibility
+function toggleButton(btn, flagSetter){
+  btn.addEventListener('click', ()=>{
+    const isOn = btn.getAttribute('aria-pressed') === 'true';
+    btn.setAttribute('aria-pressed', String(!isOn));
+    btn.textContent = isOn ? 'OFF' : 'ON';
+    flagSetter(!isOn);
+    applyToggles();
+  });
+  btn.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault(); btn.click();
+    }
+  });
+}
+
+toggleButton(toggleClutter, (v)=>{ reduceClutter = v; });
+toggleButton(toggleHierarchy, (v)=>{ improveHierarchy = v; });
+toggleButton(toggleContrast, (v)=>{ increaseContrast = v; });
+
+// small accessibility: allow keyboard to find oat via arrow navigation (not solving the game but enabling access to controls)
+sceneContainer.addEventListener('keydown', (e)=>{
+  if(e.key === 'Enter' && document.activeElement === sceneContainer){
+    // cast ray from center
+    const rect = renderer.domElement.getBoundingClientRect();
+    const cx = rect.left + rect.width/2; const cy = rect.top + rect.height/2;
+    screenToPointer(cx,cy);
+    raycaster.setFromCamera(pointer,camera);
+    const intersects = raycaster.intersectObjects(products.map(p=>p.mesh));
+    if(intersects.length>0) handleProductClick(intersects[0].object);
+  }
+});
+
+// End game integration: stop timer properly
+function stopTimer(){
+  if(timerInterval) clearInterval(timerInterval);
+  timerInterval = null;
+  endTime = performance.now();
+  timeEl.textContent = formatTimeElapsed();
+}
+
+// initial resize
+onWindowResize();
+
+// Make scene scrollable and responsive on mobile: allow pointer drag to pan camera
+let isDragging=false; let startX=0; let startY=0; let startCamX=0; let startCamY=0;
+renderer.domElement.addEventListener('pointerdown',(e)=>{ if(e.button===0){ isDragging=true; startX=e.clientX; startY=e.clientY; startCamX=camera.position.x; startCamY=camera.position.y; renderer.domElement.setPointerCapture(e.pointerId);} });
+renderer.domElement.addEventListener('pointerup',(e)=>{ isDragging=false; try{ renderer.domElement.releasePointerCapture(e.pointerId);}catch(_){} });
+renderer.domElement.addEventListener('pointermove',(e)=>{ if(isDragging){ const dx=(e.clientX-startX)/20; const dy=(e.clientY-startY)/40; camera.position.x = startCamX - dx; camera.position.y = startCamY + dy; } });
+
+// ensure keyboard focusability on container
+sceneContainer.setAttribute('tabindex','0');
+
+// small UX: show hint clicking outside products
+renderer.domElement.addEventListener('pointerdown', (e)=>{ /* handled above */ }, {passive:true});
+
+// expose a tiny console log for debugging
+console.info('FIND IT prototype initialized. Click START to play.');
+
+</script>
+</body>
+</html>
