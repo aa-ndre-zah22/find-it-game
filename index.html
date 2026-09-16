@@ -417,11 +417,6 @@ function startTimer(){
     timeEl.textContent = formatTimeElapsed();
   },250);
 }
-function stopTimer(){
-  if(timerInterval) clearInterval(timerInterval);
-  timerInterval = null;
-  timeEl.textContent = formatTimeElapsed();
-}
 function formatTimeElapsed(){
   const now = found ? (endTime || performance.now()) : performance.now();
   const elapsed = (found ? (endTime-startTime) : (performance.now()-startTime)) || 0;
